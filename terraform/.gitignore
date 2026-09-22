@@ -1,0 +1,17 @@
+# Terraformの作業ディレクトリ（プロバイダーのプラグインなどが入る）
+.terraform/
+
+# Terraformの状態ファイル（実際のAWSリソースの情報が入るため、Gitで共有すべきではない）
+*.tfstate
+*.tfstate.*
+
+# 変数の値を書いたファイル（AWSアクセスキーなど機密情報が入る可能性があるため除外）
+*.tfvars
+*.tfvars.json
+
+# その他の一時ファイル
+crash.log
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
