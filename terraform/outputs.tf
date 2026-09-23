@@ -22,3 +22,8 @@ output "pdf_processor_log_group" {
   description = "解析用Lambdaのログが出力されるCloudWatch Logsのロググループ名"
   value       = aws_cloudwatch_log_group.pdf_processor.name
 }
+
+output "documents_table_name" {
+  description = "PDF解析結果（要約）を保存するDynamoDBテーブル名"
+  value       = aws_dynamodb_table.documents.name
+}

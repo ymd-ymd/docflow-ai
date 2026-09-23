@@ -6,11 +6,15 @@ S3のObjectCreatedイベント（.pdfファイルのみ）から呼び出され�
   2. S3からPDF本体を取得する（サイズ上限を超えるファイルは読み込まない）
   3. Amazon Bedrock Converse API の document 入力でPDFをClaudeへ渡し、日本語で3行要約させる
   4. 要約結果をCloudWatch Logsへ出力する（PDF本文そのものはログに出さない）
+  5. 要約結果とメタデータをDynamoDBへ保存する（PDF本文そのものは保存しない）
 """
 
 import json
 import os
+import re
 import traceback
+import uuid
+from datetime import datetime, timezone
 from urllib.parse import unquote_plus
 
 import boto3
@@ -22,6 +26,17 @@ BEDROCK_MODEL_ID = os.environ["BEDROCK_MODEL_ID"]
 
 # 検証用のPDFサイズ上限（バイト）。Converse APIのdocument入力上限（4.5MB）より小さい4MBを既定値にします
 MAX_PDF_BYTES = int(os.environ.get("MAX_PDF_BYTES", str(4 * 1024 * 1024)))
+
+# 要約結果を保存するDynamoDBテーブル名（Terraformで環境変数として設定）
+DYNAMODB_TABLE_NAME = os.environ["DYNAMODB_TABLE_NAME"]
+
+# Presigned URL発行Lambdaが作るオブジェクトキー uploads/<uuid4>-<ファイル名> を分解するためのパターン。
+# 先頭のUUID部分を documentId、残りを元のファイル名として取り出します。
+UPLOAD_KEY_PATTERN = re.compile(
+    r"^uploads/"
+    r"(?P<uuid>[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})"
+    r"-(?P<file_name>.+)$"
+)
 
 # Claudeへの指示文
 SUMMARY_PROMPT = "このPDFの内容を日本語で3行で要約してください。"
@@ -45,6 +60,8 @@ bedrock_runtime = boto3.client(
         retries={"max_attempts": 2, "mode": "standard"},
     ),
 )
+
+documents_table = boto3.resource("dynamodb").Table(DYNAMODB_TABLE_NAME)
 
 
 class PdfValidationError(Exception):
@@ -119,6 +136,37 @@ def summarize_pdf(pdf_bytes):
         "stopReason": response.get("stopReason"),
         "usage": response.get("usage"),
     }
+
+
+def parse_document_identity(bucket_name, object_key):
+    """S3オブジェクトキーから documentId と元のファイル名を取り出します。"""
+    match = UPLOAD_KEY_PATTERN.match(object_key)
+    if match:
+        # Presigned URL発行Lambdaが付けたUUID（uuid4）をそのまま使います。
+        # アップロードごとに新しく作られるため、同じファイル名でも衝突しません。
+        return match.group("uuid"), match.group("file_name")
+
+    # 想定外の形式（AWSコンソールから手動でアップロードした場合など）は、
+    # バケット名+キーから決まった値になるUUID（uuid5）を作ります。
+    # 同じオブジェクトなら常に同じID、別のオブジェクトなら別のIDになります。
+    fallback_id = str(uuid.uuid5(uuid.NAMESPACE_URL, f"s3://{bucket_name}/{object_key}"))
+    return fallback_id, object_key.rsplit("/", 1)[-1]
+
+
+def save_summary(document_id, file_name, object_key, summary):
+    """要約結果とメタデータをDynamoDBへ1件保存します（PDF本文は保存しません）。"""
+    item = {
+        "documentId": document_id,
+        "fileName": file_name,
+        "s3Key": object_key,
+        "status": "COMPLETED",
+        "summary": summary,
+        "modelId": BEDROCK_MODEL_ID,
+        "createdAt": datetime.now(timezone.utc).isoformat(timespec="milliseconds"),
+    }
+    # 同じ documentId があれば上書きします。
+    # S3イベントが重複して届いた場合でも、データが二重にならないようにするためです。
+    documents_table.put_item(Item=item)
 
 
 def process_record(record):
@@ -216,6 +264,47 @@ def process_record(record):
     )
     if result["stopReason"] == "max_tokens":
         log({"message": "Summary may be truncated (max_tokens reached)", **context_info})
+
+    # --- 3. 要約結果をDynamoDBへ保存 ---
+    document_id, file_name = parse_document_identity(bucket_name, object_key)
+    try:
+        save_summary(document_id, file_name, object_key, result["summary"])
+    except ClientError as e:
+        # 権限不足(AccessDenied)・テーブルが存在しない(ResourceNotFound)など
+        error = e.response.get("Error", {})
+        log(
+            {
+                "message": "DynamoDB PutItem failed",
+                "errorCode": error.get("Code"),
+                "errorMessage": error.get("Message"),
+                "requestId": e.response.get("ResponseMetadata", {}).get("RequestId"),
+                "documentId": document_id,
+                "table": DYNAMODB_TABLE_NAME,
+                **context_info,
+            }
+        )
+        return False
+    except BotoCoreError as e:
+        log(
+            {
+                "message": "DynamoDB PutItem failed",
+                "errorType": type(e).__name__,
+                "errorMessage": str(e),
+                "documentId": document_id,
+                "table": DYNAMODB_TABLE_NAME,
+                **context_info,
+            }
+        )
+        return False
+
+    log(
+        {
+            "message": "PDF summary saved to DynamoDB",
+            "documentId": document_id,
+            "table": DYNAMODB_TABLE_NAME,
+            **context_info,
+        }
+    )
 
     return True
 

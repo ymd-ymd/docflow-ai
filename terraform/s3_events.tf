@@ -101,15 +101,18 @@ resource "aws_lambda_function" "pdf_processor" {
       # 検証用のPDFサイズ上限（バイト）。4MB = 4 * 1024 * 1024。
       # Bedrock Converse APIのdocument入力上限（1ファイル4.5MB）より小さくしています
       MAX_PDF_BYTES = "4194304"
+      # 要約結果を保存するDynamoDBテーブル名（dynamodb.tf で定義）
+      DYNAMODB_TABLE_NAME = aws_dynamodb_table.documents.name
     }
   }
 
-  # ロググループとログ権限・Bedrock権限・S3読み取り権限が先に作られてから、Lambdaを作成します
+  # ロググループと各権限（ログ・Bedrock・S3読み取り・DynamoDB書き込み）が先に作られてから、Lambdaを作成します
   depends_on = [
     aws_cloudwatch_log_group.pdf_processor,
     aws_iam_role_policy.pdf_processor_lambda_logs,
     aws_iam_role_policy.pdf_processor_lambda_bedrock,
     aws_iam_role_policy.pdf_processor_lambda_s3_read,
+    aws_iam_role_policy.pdf_processor_lambda_dynamodb,
   ]
 }
 
