@@ -9,6 +9,9 @@
 *.tfvars
 *.tfvars.json
 
+# Lambdaデプロイ用に自動生成されるzipファイル（ソースコードから毎回作られるため除外）
+/build/
+
 # その他の一時ファイル
 crash.log
 override.tf
