@@ -23,6 +23,21 @@ output "pdf_processor_log_group" {
   value       = aws_cloudwatch_log_group.pdf_processor.name
 }
 
+output "get_document_url_template" {
+  description = "解析結果取得APIのURL形式（{documentId} をアップロード時のUUIDに置き換えてGETしてください）"
+  value       = "${aws_apigatewayv2_stage.default.invoke_url}documents/{documentId}"
+}
+
+output "get_document_function_name" {
+  description = "解析結果取得Lambdaの関数名"
+  value       = aws_lambda_function.get_document.function_name
+}
+
+output "get_document_log_group" {
+  description = "解析結果取得Lambdaのログが出力されるCloudWatch Logsのロググループ名"
+  value       = aws_cloudwatch_log_group.get_document.name
+}
+
 output "documents_table_name" {
   description = "PDF解析結果（要約）を保存するDynamoDBテーブル名"
   value       = aws_dynamodb_table.documents.name

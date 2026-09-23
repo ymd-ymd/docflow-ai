@@ -1,6 +1,7 @@
 # ============================================================
 # API Gateway (HTTP API): ブラウザからのリクエストを受け付ける玄関口
 # POST /upload-url -> Lambda(presigned_url) を呼び出します
+# GET /documents/{documentId} -> Lambda(get_document) は document_api.tf で定義しています
 # ============================================================
 
 resource "aws_apigatewayv2_api" "main" {
@@ -10,7 +11,8 @@ resource "aws_apigatewayv2_api" "main" {
   # Next.js (http://localhost:3000) からのブラウザ呼び出しを許可します
   cors_configuration {
     allow_origins = ["http://localhost:3000"]
-    allow_methods = ["POST", "OPTIONS"]
+    # GET は解析結果取得API（document_api.tf の GET /documents/{documentId}）用です
+    allow_methods = ["GET", "POST", "OPTIONS"]
     allow_headers = ["content-type"]
     max_age       = 300
   }
