@@ -3,8 +3,8 @@
 # pdf_processor Lambda がDynamoDBへ保存した要約結果を、新しい順に一覧で取得できるようにします。
 # API Gateway本体（aws_apigatewayv2_api.main）とステージは api_gateway.tf の既存のものを使います。
 #
-# 注意: 現在は認証なしのdev環境検証用です。URLを知っていれば誰でも全件の一覧を取得できます。
-# 本番利用の前に、認証（Cognito）とユーザーごとのデータ分離を追加する予定です。
+# 注意: Cognito のログインは必須ですが、まだユーザーごとのデータ分離はしていません。
+# ログインしたユーザーは全員分の一覧を取得できます（今後、userId で絞り込む予定です）。
 # ============================================================
 
 locals {
@@ -128,6 +128,10 @@ resource "aws_apigatewayv2_route" "list_documents" {
   api_id    = aws_apigatewayv2_api.main.id
   route_key = "GET /documents"
   target    = "integrations/${aws_apigatewayv2_integration.list_documents.id}"
+
+  # ログイン必須: 有効なアクセストークンがないリクエストは 401 になります（api_gateway.tf の JWT Authorizer）
+  authorization_type = "JWT"
+  authorizer_id      = aws_apigatewayv2_authorizer.cognito.id
 }
 
 # API GatewayがこのLambdaを呼び出せるように明示的に許可します。

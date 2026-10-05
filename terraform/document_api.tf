@@ -118,6 +118,10 @@ resource "aws_apigatewayv2_route" "get_document" {
   api_id    = aws_apigatewayv2_api.main.id
   route_key = "GET /documents/{documentId}"
   target    = "integrations/${aws_apigatewayv2_integration.get_document.id}"
+
+  # ログイン必須: 有効なアクセストークンがないリクエストは 401 になります（api_gateway.tf の JWT Authorizer）
+  authorization_type = "JWT"
+  authorizer_id      = aws_apigatewayv2_authorizer.cognito.id
 }
 
 # API GatewayがこのLambdaを呼び出せるように明示的に許可します。
