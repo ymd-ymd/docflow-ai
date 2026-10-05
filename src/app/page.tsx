@@ -1,4 +1,5 @@
 import FileUploadArea from "./_components/FileUploadArea";
+import RecentDocuments from "./_components/RecentDocuments";
 
 const features = [
   {
@@ -76,6 +77,10 @@ export default function Home() {
 
         <section className="mx-auto max-w-3xl px-6 pb-20">
           <FileUploadArea />
+        </section>
+
+        <section className="mx-auto max-w-3xl px-6 pb-20">
+          <RecentDocuments />
         </section>
 
         <section className="border-t border-gray-100 bg-gray-50 py-20">
