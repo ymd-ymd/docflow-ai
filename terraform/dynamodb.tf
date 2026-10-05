@@ -20,6 +20,34 @@ resource "aws_dynamodb_table" "documents" {
     name = "documentId"
     type = "S"
   }
+
+  # 以下2つは、一覧取得用のGSI（下記）のキーとして使うため定義します
+  attribute {
+    name = "status"
+    type = "S"
+  }
+
+  attribute {
+    name = "createdAt"
+    type = "S"
+  }
+
+  # GSI（グローバルセカンダリインデックス）: 同じデータを「status + createdAt」で並べ直した索引です。
+  # 解析結果一覧API（GET /documents）が、status = "COMPLETED" のデータを新しい順に取り出すために使います。
+  # createdAt は ISO 8601 形式の文字列なので、文字列の並び順がそのまま時刻の順になります。
+  # 既存のデータも、インデックス作成時にDynamoDBが自動で登録します。
+  global_secondary_index {
+    # 名前は list_documents_api.tf の local で定義しています（Lambdaの環境変数・IAMでも同じ名前を使うため）
+    name      = local.documents_list_index_name
+    hash_key  = "status"
+    range_key = "createdAt"
+
+    # インデックスにコピーする項目を、一覧APIで返すものだけに限定します
+    # （documentId・status・createdAt はキーなので自動でコピーされます）。
+    # S3のオブジェクトキー(s3Key)などの内部情報はインデックスに含めません。
+    projection_type    = "INCLUDE"
+    non_key_attributes = ["fileName", "summary", "modelId"]
+  }
 }
 
 # 最小権限: 上で作成したテーブルへの1件書き込み（PutItem）だけを許可します。

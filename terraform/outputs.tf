@@ -42,3 +42,18 @@ output "documents_table_name" {
   description = "PDF解析結果（要約）を保存するDynamoDBテーブル名"
   value       = aws_dynamodb_table.documents.name
 }
+
+output "list_documents_url" {
+  description = "解析結果一覧APIのURL（?limit=20 や ?nextToken=... を付けてGETできます）"
+  value       = "${aws_apigatewayv2_stage.default.invoke_url}documents"
+}
+
+output "list_documents_function_name" {
+  description = "解析結果一覧Lambdaの関数名"
+  value       = aws_lambda_function.list_documents.function_name
+}
+
+output "list_documents_log_group" {
+  description = "解析結果一覧Lambdaのログが出力されるCloudWatch Logsのロググループ名"
+  value       = aws_cloudwatch_log_group.list_documents.name
+}
