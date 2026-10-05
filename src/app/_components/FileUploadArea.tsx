@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import type { ChangeEvent, DragEvent } from "react";
 import AnalysisResultCard from "./AnalysisResultCard";
 import type { DocumentResult } from "./AnalysisResultCard";
+import { AUTH_EXPIRED_MESSAGE, getAuthHeaders } from "./apiAuth";
 
 // idle: 待機中 / uploading: S3へアップロード中 / analyzing: AIで解析中 / completed: 解析完了 / error: エラー
 type UploadStatus = "idle" | "uploading" | "analyzing" | "completed" | "error";
@@ -22,14 +23,25 @@ const MAX_CONSECUTIVE_POLL_ERRORS = 3;
 // 1回の問い合わせを待つ最大時間（ミリ秒）
 const POLL_REQUEST_TIMEOUT_MS = 10000;
 
-// Presigned URL API は documentId を返さず objectKey（uploads/<UUID>-<ファイル名>）を返します。
-// pdf-processor Lambda はこの先頭のUUIDを documentId としてDynamoDBに保存するため、
-// Lambda（UPLOAD_KEY_PATTERN）と同じルールでUUID部分を取り出します。
-const OBJECT_KEY_PATTERN =
-  /^uploads\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})-.+$/;
+const DOCUMENT_ID_PATTERN =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 
-const extractDocumentId = (objectKey: string) =>
-  objectKey.match(OBJECT_KEY_PATTERN)?.[1] ?? null;
+// Presigned URL API の objectKey は uploads/<UUID>-<ファイル名>（現在）か
+// users/<userId>/<UUID>-<ファイル名>（ユーザー別に分けた後）の形です。
+// pdf-processor Lambda はこの <UUID> を documentId としてDynamoDBに保存するため、同じルールで取り出します。
+const OBJECT_KEY_PATTERN =
+  /^(?:uploads|users\/[^/]+)\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})-.+$/;
+
+// レスポンスに documentId があればそれを優先し、なければ objectKey から取り出します
+const getDocumentId = (data: { documentId?: unknown; objectKey?: unknown } | null) => {
+  if (typeof data?.documentId === "string" && DOCUMENT_ID_PATTERN.test(data.documentId)) {
+    return data.documentId;
+  }
+  if (typeof data?.objectKey === "string") {
+    return data.objectKey.match(OBJECT_KEY_PATTERN)?.[1] ?? null;
+  }
+  return null;
+};
 
 // 指定時間待ちます。中断（ページ離脱・別ファイル選択）されたらすぐに終了します
 const wait = (ms: number, signal: AbortSignal) =>
@@ -57,11 +69,15 @@ const pollDocument = async (
     // Lambdaの処理には数秒以上かかるため、1回目も少し待ってから問い合わせます
     await wait(POLL_INTERVAL_MS, signal);
 
+    // ログインの有効期限切れなどでトークンを取得できない場合は、再試行せずにエラーにします
+    const authHeaders = await getAuthHeaders();
+
     let response: Response;
     try {
       response = await fetch(
         `${API_URL}/documents/${encodeURIComponent(documentId)}`,
         {
+          headers: authHeaders,
           signal: AbortSignal.any([
             signal,
             AbortSignal.timeout(POLL_REQUEST_TIMEOUT_MS),
@@ -77,6 +93,11 @@ const pollDocument = async (
         );
       }
       continue;
+    }
+
+    // 401 はトークンが無効（期限切れなど）なので、再試行せずにログインし直してもらいます
+    if (response.status === 401) {
+      throw new Error(AUTH_EXPIRED_MESSAGE);
     }
 
     // 404 は「まだDynamoDBに保存されていない（解析中）」なので、エラーにせず待ち続けます
@@ -210,15 +231,19 @@ export default function FileUploadArea() {
       // 1. API Gateway から Presigned URL（S3へ一時的にアップロードできるURL）を取得
       let uploadUrl: string;
       let documentId: string;
+      const authHeaders = await getAuthHeaders();
       try {
         const response = await fetch(`${API_URL}/upload-url`, {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: { "Content-Type": "application/json", ...authHeaders },
           body: JSON.stringify({
             fileName: toSafeFileName(selectedFile.name),
             contentType: PDF_CONTENT_TYPE,
           }),
         });
+        if (response.status === 401) {
+          throw new Error(AUTH_EXPIRED_MESSAGE);
+        }
         const data = await response.json().catch(() => null);
         if (!response.ok) {
           throw new Error(
@@ -230,10 +255,7 @@ export default function FileUploadArea() {
           throw new Error("APIのレスポンスに uploadUrl が含まれていません。");
         }
         uploadUrl = data.uploadUrl;
-        const extractedId =
-          typeof data?.objectKey === "string"
-            ? extractDocumentId(data.objectKey)
-            : null;
+        const extractedId = getDocumentId(data);
         if (!extractedId) {
           throw new Error(
             "APIのレスポンスから解析結果の取得に必要なIDを取り出せませんでした。"

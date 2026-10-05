@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import AnalysisResultCard, { formatCreatedAt } from "./AnalysisResultCard";
 import type { DocumentResult } from "./AnalysisResultCard";
+import { AUTH_EXPIRED_MESSAGE, getAuthHeaders } from "./apiAuth";
 
 // API GatewayのURLは .env.local の NEXT_PUBLIC_API_URL から読み込みます（末尾の / は除去）
 const API_URL = process.env.NEXT_PUBLIC_API_URL?.replace(/\/+$/, "");
@@ -34,9 +35,12 @@ const fetchJson = async (
   signal: AbortSignal,
   failureMessage: string
 ): Promise<unknown> => {
+  const authHeaders = await getAuthHeaders();
+
   let response: Response;
   try {
     response = await fetch(url, {
+      headers: authHeaders,
       signal: AbortSignal.any([signal, AbortSignal.timeout(REQUEST_TIMEOUT_MS)]),
     });
   } catch (error) {
@@ -50,6 +54,11 @@ const fetchJson = async (
     throw new Error(
       "APIに接続できませんでした。ネットワーク接続とAPIのURL設定を確認してください。"
     );
+  }
+
+  // 401 はトークンが無効（期限切れなど）なので、ログインし直してもらいます
+  if (response.status === 401) {
+    throw new Error(AUTH_EXPIRED_MESSAGE);
   }
 
   const data = await response.json().catch(() => null);
