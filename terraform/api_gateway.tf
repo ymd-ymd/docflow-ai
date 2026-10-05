@@ -15,7 +15,9 @@ resource "aws_apigatewayv2_api" "main" {
     # GET は解析結果取得API（document_api.tf の GET /documents/{documentId}）と
     # 解析結果一覧API（list_documents_api.tf の GET /documents）用です
     allow_methods = ["GET", "POST", "OPTIONS"]
-    allow_headers = ["content-type"]
+    # authorization は、Next.js が Cognito のアクセストークンを
+    # 「Authorization: Bearer <トークン>」として送るために許可しています
+    allow_headers = ["content-type", "authorization"]
     max_age       = 300
   }
 }
