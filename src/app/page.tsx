@@ -1,5 +1,7 @@
+import AuthGuard from "./_components/AuthGuard";
 import FileUploadArea from "./_components/FileUploadArea";
 import RecentDocuments from "./_components/RecentDocuments";
+import UserMenu from "./_components/UserMenu";
 
 const features = [
   {
@@ -40,7 +42,16 @@ const features = [
   },
 ];
 
+// ログインしていない場合は AuthGuard が /login へ移動させ、PDF画面は表示しません
 export default function Home() {
+  return (
+    <AuthGuard>
+      <HomeContent />
+    </AuthGuard>
+  );
+}
+
+function HomeContent() {
   return (
     <div className="flex min-h-screen flex-col bg-white text-gray-900">
       <header className="sticky top-0 z-10 border-b border-gray-100 bg-white/90 backdrop-blur">
@@ -48,12 +59,7 @@ export default function Home() {
           <span className="text-xl font-bold tracking-tight text-gray-900">
             DocFlow AI
           </span>
-          <button
-            type="button"
-            className="rounded-full border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-50"
-          >
-            ログイン
-          </button>
+          <UserMenu />
         </div>
       </header>
 

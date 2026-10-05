@@ -57,3 +57,20 @@ output "list_documents_log_group" {
   description = "解析結果一覧Lambdaのログが出力されるCloudWatch Logsのロググループ名"
   value       = aws_cloudwatch_log_group.list_documents.name
 }
+
+# 以下3つはNext.jsからCognitoでログインするときに使う値です。
+# パスワードやシークレットではなく、ブラウザに公開されても問題ない値です
+output "cognito_user_pool_id" {
+  description = "Cognito User Pool（会員名簿）のID"
+  value       = aws_cognito_user_pool.main.id
+}
+
+output "cognito_user_pool_client_id" {
+  description = "Next.js（ブラウザ）用のCognito App ClientのID"
+  value       = aws_cognito_user_pool_client.web.id
+}
+
+output "cognito_region" {
+  description = "Cognito User Poolを作成したAWSリージョン"
+  value       = var.aws_region
+}
